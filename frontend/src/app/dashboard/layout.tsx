@@ -2,82 +2,144 @@
 
 import { useAuthStore } from '@/stores/authStore';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Box, Image as ImageIcon, Layers, LogOut } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import {
+    LayoutDashboard, Box, Layers, LogOut,
+    Server, ChevronRight, Container, Network, HardDrive, Activity
+} from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import api from '@/lib/api';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const token = useAuthStore((state) => state.token);
+    const role = useAuthStore((state) => state.role);
     const logout = useAuthStore((state) => state.logout);
     const router = useRouter();
     const pathname = usePathname();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
-        if (!token) {
+        if (mounted && !token) {
             router.push('/login');
         }
-    }, [token, router]);
+    }, [token, router, mounted]);
 
-    if (!token) return null; // or loading spinner
+    const { data: stats } = useQuery({
+        queryKey: ['system-stats'],
+        queryFn: async () => {
+            const res = await api.get('/system/stats');
+            return res.data;
+        },
+        refetchInterval: 10000,
+        enabled: !!token,
+    });
+
+    // Render cùng output (null) trên SSR và client cho đến khi mounted
+    if (!mounted || !token) return null;
 
     const navItems = [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
         { name: 'Containers', href: '/dashboard/containers', icon: Box },
-        { name: 'Images', href: '/dashboard/images', icon: ImageIcon },
+        { name: 'Images', href: '/dashboard/images', icon: Server },
+        { name: 'Networks', href: '/dashboard/networks', icon: Network },
+        { name: 'Volumes', href: '/dashboard/volumes', icon: HardDrive },
         { name: 'Stacks', href: '/dashboard/stacks', icon: Layers },
+        { name: 'Events', href: '/dashboard/events', icon: Activity },
     ];
 
+    const isActive = (href: string) =>
+        pathname === href || pathname.startsWith(href + '/');
+
     return (
-        <div className="flex h-screen bg-gray-100 dark:bg-zinc-900">
+        <div className="flex h-screen bg-slate-950 text-slate-100">
             {/* Sidebar */}
-            <div className="w-64 bg-white dark:bg-zinc-950 border-r border-gray-200 dark:border-zinc-800 flex flex-col">
-                <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-zinc-800">
-                    <span className="text-xl font-bold text-blue-600 dark:text-blue-500">Docker Platform</span>
+            <aside className="w-60 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
+                {/* Logo */}
+                <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-800">
+                    <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <Container className="w-4 h-4 text-white" />
+                    </div>
+                    <span className="font-bold text-white text-sm tracking-wide">Docker Platform</span>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-1">
+                {/* Nav */}
+                <nav className="flex-1 p-3 space-y-0.5">
                     {navItems.map((item) => {
-                        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                        const active = isActive(item.href);
                         const Icon = item.icon;
-
                         return (
                             <Link
                                 key={item.href}
                                 href={item.href}
-                                className={`flex items-center px-3 py-2 text-sm font-medium rounded-md ${isActive
-                                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400'
-                                        : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-zinc-800'
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${active
+                                    ? 'bg-blue-600 text-white'
+                                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
                                     }`}
                             >
-                                <Icon className={`mr-3 h-5 w-5 ${isActive ? 'text-blue-700 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`} />
-                                {item.name}
+                                <Icon className="w-4 h-4 shrink-0" />
+                                <span className="flex-1">{item.name}</span>
+                                {active && <ChevronRight className="w-3 h-3 opacity-70" />}
                             </Link>
-                        )
+                        );
                     })}
                 </nav>
 
-                <div className="p-4 border-t border-gray-200 dark:border-zinc-800">
-                    <Button
-                        variant="ghost"
-                        className="w-full flex justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50"
-                        onClick={logout}
-                    >
-                        <LogOut className="mr-3 h-5 w-5" />
-                        Sign Out
-                    </Button>
-                </div>
-            </div>
+                {/* Stats mini */}
+                {stats && (
+                    <div className="mx-3 mb-3 p-3 bg-slate-800 rounded-lg text-xs text-slate-400 space-y-1.5">
+                        <div className="flex justify-between">
+                            <span>Containers</span>
+                            <span className="text-slate-200 font-mono">{stats.containers_running}/{stats.containers}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Images</span>
+                            <span className="text-slate-200 font-mono">{stats.images}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Docker</span>
+                            <span className="text-slate-200 font-mono">v{stats.docker_version}</span>
+                        </div>
+                    </div>
+                )}
 
-            {/* Main Content */}
+                {/* Footer */}
+                <div className="p-3 border-t border-slate-800">
+                    <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
+                        <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white uppercase">
+                            {role?.[0] || 'U'}
+                        </div>
+                        <span className="text-sm text-slate-300 flex-1 truncate capitalize">{role || 'user'}</span>
+                    </div>
+                    <button
+                        onClick={logout}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors"
+                    >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                    </button>
+                </div>
+            </aside>
+
+            {/* Main */}
             <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-zinc-800 flex items-center px-6">
-                    <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                        {navItems.find(i => pathname === i.href || pathname.startsWith(i.href + '/'))?.name || 'Dashboard'}
-                    </h1>
+                {/* Topbar */}
+                <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center px-6 shrink-0">
+                    <nav className="flex items-center gap-1.5 text-sm">
+                        {pathname.split('/').filter(Boolean).map((segment, i, arr) => (
+                            <span key={i} className="flex items-center gap-1.5">
+                                {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-slate-600" />}
+                                <span className={i === arr.length - 1 ? 'text-slate-200 font-medium capitalize' : 'text-slate-500 capitalize'}>
+                                    {segment}
+                                </span>
+                            </span>
+                        ))}
+                    </nav>
                 </header>
 
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 dark:bg-zinc-900 p-6">
+                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-950 p-6">
                     {children}
                 </main>
             </div>

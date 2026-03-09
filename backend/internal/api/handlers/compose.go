@@ -10,43 +10,64 @@ import (
 )
 
 type ComposeHandler struct {
-	// Simple handler that uses os/exec to run docker compose
 	composeDir string
 }
 
 func NewComposeHandler(dir string) *ComposeHandler {
-	// Create a directory to store uploaded compose files
 	os.MkdirAll(dir, 0755)
 	return &ComposeHandler{composeDir: dir}
+}
+
+func (h *ComposeHandler) ListStacks(c *gin.Context) {
+	entries, err := os.ReadDir(h.composeDir)
+	if err != nil {
+		c.JSON(http.StatusOK, []gin.H{})
+		return
+	}
+
+	var stacks []gin.H
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		composePath := filepath.Join(h.composeDir, entry.Name(), "docker-compose.yml")
+		if _, err := os.Stat(composePath); err == nil {
+			stacks = append(stacks, gin.H{
+				"name":         entry.Name(),
+				"compose_file": composePath,
+			})
+		}
+	}
+
+	if stacks == nil {
+		stacks = []gin.H{}
+	}
+	c.JSON(http.StatusOK, stacks)
 }
 
 func (h *ComposeHandler) DeployStack(c *gin.Context) {
 	stackName := c.PostForm("name")
 	if stackName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name requested"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name required"})
 		return
 	}
 
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file requested"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file required"})
 		return
 	}
 
 	stackDir := filepath.Join(h.composeDir, stackName)
 	os.MkdirAll(stackDir, 0755)
-	
+
 	filePath := filepath.Join(stackDir, "docker-compose.yml")
 	if err := c.SaveUploadedFile(file, filePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save file"})
 		return
 	}
 
-	// docker compose up -d
 	cmd := exec.Command("docker", "compose", "-f", filePath, "-p", stackName, "up", "-d")
-	// If running in container, this requires docker binary to be installed in the backend container 
-	// OR using docker cli via socket if bound.
-	// For simplicity, we assume 'docker' CLI is available.
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": string(output)})
@@ -58,7 +79,7 @@ func (h *ComposeHandler) DeployStack(c *gin.Context) {
 
 func (h *ComposeHandler) StopStack(c *gin.Context) {
 	stackName := c.Param("name")
-	
+
 	stackDir := filepath.Join(h.composeDir, stackName)
 	filePath := filepath.Join(stackDir, "docker-compose.yml")
 
@@ -73,6 +94,29 @@ func (h *ComposeHandler) StopStack(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": string(output)})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, gin.H{"status": "stopped", "output": string(output)})
+}
+
+func (h *ComposeHandler) RemoveStack(c *gin.Context) {
+	stackName := c.Param("name")
+
+	stackDir := filepath.Join(h.composeDir, stackName)
+	filePath := filepath.Join(stackDir, "docker-compose.yml")
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
+		return
+	}
+
+	// Stop first
+	exec.Command("docker", "compose", "-f", filePath, "-p", stackName, "down").Run()
+
+	// Remove stack directory
+	if err := os.RemoveAll(stackDir); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove stack"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "removed"})
 }

@@ -4,7 +4,10 @@ import (
 	"github.com/docker/docker/client"
 )
 
-func NewDockerClient() (*client.Client, error) {
+// DockerClient is an alias for client.Client
+type DockerClient = client.Client
+
+func NewDockerClient() (*DockerClient, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err

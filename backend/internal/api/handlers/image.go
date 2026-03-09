@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"context"
-	"io"
 	"net/http"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
+	"io"
 )
 
 type ImageHandler struct {
@@ -27,6 +27,26 @@ func (h *ImageHandler) ListImages(c *gin.Context) {
 	c.JSON(http.StatusOK, images)
 }
 
+func (h *ImageHandler) GetImage(c *gin.Context) {
+	id := c.Param("id")
+	inspect, _, err := h.dockerCli.ImageInspectWithRaw(context.Background(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, inspect)
+}
+
+func (h *ImageHandler) GetImageHistory(c *gin.Context) {
+	id := c.Param("id")
+	history, err := h.dockerCli.ImageHistory(context.Background(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, history)
+}
+
 func (h *ImageHandler) PullImage(c *gin.Context) {
 	var req struct {
 		Image string `json:"image"`
@@ -42,7 +62,6 @@ func (h *ImageHandler) PullImage(c *gin.Context) {
 		return
 	}
 	defer reader.Close()
-	// Discard output for simple pull, or we could stream it back
 	io.Copy(io.Discard, reader)
 
 	c.JSON(http.StatusOK, gin.H{"status": "pulled", "image": req.Image})

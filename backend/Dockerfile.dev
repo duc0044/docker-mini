@@ -1,0 +1,16 @@
+FROM golang:1.22-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache git docker-cli docker-cli-compose
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+# We don't copy all source since we're using bind mounts in dev
+# Air will be installed to provide live reload if needed, but for simplicity
+# we'll just use go run
+
+# Alternatively, wait-for-it or running directly
+CMD ["go", "run", "cmd/api/main.go"]
